@@ -1,86 +1,97 @@
-#define BLYNK_TEMPLATE_ID "TMPL6pCBFFrxM"
-#define BLYNK_TEMPLATE_NAME "LED ESP32"
-#define BLYNK_FIRMWARE_VERSION        "0.1.0"
-#define BLYNK_PRINT Serial
+/*
+  WiFiAccessPoint.ino creates a WiFi access point and provides a web server on it.
 
-#define APP_DEBUG
+  Steps:
+  1. Connect to the access point "yourAp"
+  2. Point your web browser to http://192.168.4.1/H to turn the LED on or http://192.168.4.1/L to turn it off
+     OR
+     Run raw TCP "GET /H" and "GET /L" on PuTTY terminal with 192.168.4.1 as IP address and 80 as port
 
-#include "BlynkEdgent.h"
+  Created for arduino-esp32 on 04 July, 2018
+  by Elochukwu Ifediora (fedy0)
+*/
 
-#define LED_PIN 8  // Use pin 2 for LED (change it, if your board uses another pin)
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiAP.h>
+
+#define LED_BUILTIN 2   // Set the GPIO pin where you connected your test LED or comment this line out if your dev board has a built-in LED
+
+// Set these to your desired credentials.
+const char *ssid = "yourAP";
+const char *password = "yourPassword";
+
+WiFiServer server(80);
 
 
-BLYNK_WRITE(V0)
-{
-  // Local variable `value` stores the incoming LED switch state (1 or 0)
-  // Based on this value, the physical LED on the board will be on or off:
-  int value = param.asInt();
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
 
-  if (value == 1) {
-    digitalWrite(LED_PIN, HIGH);
-    Serial.print("value =");
-    Serial.println(value);
-  } else {
-    digitalWrite(LED_PIN, LOW);
-    Serial.print("value = ");
-    Serial.println(value);
-  }
-}
-void setup()
-{
-  // pinMode(LED_PIN, OUTPUT);
-
-  // Debug console. Make sure you have the same baud rate selected in your serial monitor
   Serial.begin(921600);
-  delay(100);
-  #if 0 
-  // AP 모드 설정을 위한 WiFi 초기화
-  WiFi.mode(WIFI_OFF);
-  delay(1000);
-  WiFi.mode(WIFI_AP);
-  delay(2000);
-  // AP 정보 출력
-  Serial.print("AP Name: ");
-  Serial.println(getWiFiName());
-  Serial.print("AP IP: ");
-  Serial.println(WiFi.softAPIP());
-  BlynkEdgent.begin();
-  #endif
-  BlynkEdgent.begin();
+  Serial.println();
+  Serial.println("Configuring access point...");
 
-  const char* AP_SSID = "ESP32-TEST-AP";  // 알아보기 쉬운 이름으로 설정
-  const int WIFI_CHANNEL = 1;
-
-  // WiFi 완전 초기화
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  delay(1000);
-  
-  // AP 모드 설정
-  WiFi.mode(WIFI_AP);
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);
-  
-  // AP 시작
-  bool success = WiFi.softAP(AP_SSID, "", WIFI_CHANNEL, 0);
-  
-  if(success) {
-    Serial.println("AP Started Successfully");
-    Serial.printf("AP Name: %s\n", AP_SSID);
-    Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
-    Serial.printf("AP Channel: %d\n", WiFi.channel());
-    Serial.printf("AP MAC: %s\n", WiFi.softAPmacAddress().c_str());
-  } else {
-    Serial.println("AP Start Failed!");
+  // You can remove the password parameter if you want the AP to be open.
+  // a valid password must have more than 7 characters
+  if (!WiFi.softAP(ssid, password)) {
+    log_e("Soft AP creation failed.");
+    while(1);
   }
+  IPAddress myIP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(myIP);
+  server.begin();
 
+  Serial.println("Server started");
 }
 
 void loop() {
-  BlynkEdgent.run();
-  // delay(10);
-  // digitalWrite(8, HIGH);
-  // delay(100);
-  // digitalWrite(8, LOW);
-  // delay(100);
-}
+  WiFiClient client = server.available();   // listen for incoming clients
 
+  if (client) {                             // if you get a client,
+    Serial.println("New Client.");           // print a message out the serial port
+    String currentLine = "";                // make a String to hold incoming data from the client
+    while (client.connected()) {            // loop while the client's connected
+      if (client.available()) {             // if there's bytes to read from the client,
+        char c = client.read();             // read a byte, then
+        Serial.write(c);                    // print it out the serial monitor
+        if (c == '\n') {                    // if the byte is a newline character
+
+          // if the current line is blank, you got two newline characters in a row.
+          // that's the end of the client HTTP request, so send a response:
+          if (currentLine.length() == 0) {
+            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
+            // and a content-type so the client knows what's coming, then a blank line:
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println();
+
+            // the content of the HTTP response follows the header:
+            client.print("Click <a href=\"/H\">here</a> to turn ON the LED.<br>");
+            client.print("Click <a href=\"/L\">here</a> to turn OFF the LED.<br>");
+
+            // The HTTP response ends with another blank line:
+            client.println();
+            // break out of the while loop:
+            break;
+          } else {    // if you got a newline, then clear currentLine:
+            currentLine = "";
+          }
+        } else if (c != '\r') {  // if you got anything else but a carriage return character,
+          currentLine += c;      // add it to the end of the currentLine
+        }
+
+        // Check to see if the client request was "GET /H" or "GET /L":
+        if (currentLine.endsWith("GET /H")) {
+          digitalWrite(LED_BUILTIN, HIGH);               // GET /H turns the LED on
+        }
+        if (currentLine.endsWith("GET /L")) {
+          digitalWrite(LED_BUILTIN, LOW);                // GET /L turns the LED off
+        }
+      }
+    }
+    // close the connection:
+    client.stop();
+    Serial.println("Client Disconnected.");
+  }
+}
