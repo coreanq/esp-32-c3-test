@@ -43,104 +43,18 @@ void InitESPNow() {
     }
 }
 
-// 슬레이브 장치 스캔 함수
-void ScanForSlave() {
-    int16_t scanResults = WiFi.scanNetworks(false, false, false, 300, CHANNEL);
-    bool slaveFound = 0;
-    memset(&slave, 0, sizeof(slave));
-
-    Serial.println("");
-    if (scanResults == 0) {
-        Serial.println("No WiFi devices in AP Mode found");
-    } else {
-        Serial.print("Found "); Serial.print(scanResults); Serial.println(" devices ");
-        for (int i = 0; i < scanResults; ++i) {
-            // 스캔된 장치의 정보 가져오기
-            String SSID = WiFi.SSID(i);
-            int32_t RSSI = WiFi.RSSI(i);
-            String BSSIDstr = WiFi.BSSIDstr(i);
-
-            if (PRINTSCANRESULTS) {
-                Serial.print(i + 1); Serial.print(": ");
-                Serial.print(SSID); Serial.print(" (");
-                Serial.print(RSSI); Serial.print(")");
-                Serial.println("");
-            }
-            delay(10);
-
-            // 'Slave'로 시작하는 SSID를 찾음
-            if (SSID.indexOf("Slave") == 0) {
-                Serial.println("Found a Slave.");
-                Serial.print(i + 1); Serial.print(": "); Serial.print(SSID);
-                Serial.print(" ["); Serial.print(BSSIDstr); Serial.print("]");
-                Serial.print(" ("); Serial.print(RSSI); Serial.print(")");
-                Serial.println("");
-
-                // MAC 주소 파싱
-                int mac[6];
-                if (6 == sscanf(BSSIDstr.c_str(), "%x:%x:%x:%x:%x:%x",
-                               &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5])) {
-                    for (int ii = 0; ii < 6; ++ii) {
-                        slave.peer_addr[ii] = (uint8_t) mac[ii];
-                    }
-                }
-
-                slave.channel = CHANNEL;  // 채널 설정
-                slave.encrypt = 0;        // 암호화 비활성화
-                slaveFound = 1;
-                break;
-            }
-        }
-    }
-
-    if (slaveFound) {
-        Serial.println("Slave Found, processing..");
-    } else {
-        Serial.println("Slave Not Found, trying again.");
-    }
-
-    WiFi.scanDelete();  // 스캔 결과 정리
+// config AP SSID
+void configDeviceAP() {
+  const char *SSID = "Slave_1";
+  bool result = WiFi.softAP("Slave_1", "kcpark", CHANNEL, 0);
+  if (!result) {
+    Serial.println("AP Config failed.");
+  } else {
+    Serial.println("AP Config Success. Broadcasting with AP: " + String(SSID));
+    Serial.print("AP CHANNEL "); Serial.println(WiFi.channel());
+  }
 }
 
-// 슬레이브 관리 함수
-bool manageSlave() {
-    if (slave.channel == CHANNEL) {
-        if (DELETEBEFOREPAIR) {
-            deletePeer();
-        }
-
-        // 페어링 상태 확인
-        Serial.print("Slave Status: ");
-        bool exists = esp_now_is_peer_exist(slave.peer_addr);
-        if (exists) {
-            Serial.println("Already Paired");
-            return true;
-        } else {
-            // 새로운 페어링 시도
-            esp_err_t addStatus = esp_now_add_peer(&slave);
-            if (addStatus == ESP_OK) {
-                Serial.println("Pair success");
-                return true;
-            } else {
-                Serial.println("Pair failed");
-                return false;
-            }
-        }
-    }
-    Serial.println("No Slave found to process");
-    return false;
-}
-
-// 페어링된 슬레이브 삭제
-void deletePeer() {
-    esp_err_t delStatus = esp_now_del_peer(slave.peer_addr);
-    Serial.print("Slave Delete Status: ");
-    if (delStatus == ESP_OK) {
-        Serial.println("Success");
-    } else {
-        Serial.println("Error");
-    }
-}
 
 // 데이터 전송 함수
 void sendData() {
@@ -161,29 +75,26 @@ void sendData() {
 void setup() {
     // 시리얼 통신 초기화
     Serial.begin(921600);
-    Serial1.begin(921600, SERIAL_8N1, 20, 21);  // RX:20, TX:21 핀 사용
+    delay(1000);
+    pinMode(8, OUTPUT);
+    digitalWrite(8, LOW);
+    
+    Serial.println("ESP-NOW Slave Start");
     
     // WiFi 모드 설정
-    WiFi.mode(WIFI_STA);
-    Serial.println("wifi set complete");
+    WiFi.mode(WIFI_AP);
+    configDeviceAP();
 
-    // ESP-NOW 초기화 및 콜백 등록
+    // This is the mac address of the Slave in AP Mode
+    Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
+    // Init ESPNow with a fallback logic
     InitESPNow();
+
     esp_now_register_send_cb(OnDataSent);
     esp_now_register_recv_cb(OnDataRecv);
 }
 
 void loop() {
-    // 슬레이브 검색
-    ScanForSlave();
-    if (slave.channel == CHANNEL) {
-        // 페어링 상태 확인 및 데이터 전송
-        bool isPaired = manageSlave();
-        if (isPaired) {
-            sendData();
-        } else {
-            Serial.println("Slave pair failed!");
-        }
-    }
-    delay(100);
+    Serial.println("loop");
+    delay(1000);
 }
