@@ -94,7 +94,7 @@ void sendData() {
 
 void setup() {
     // 시리얼 통신 초기화
-    Serial.begin(921600);
+    Serial.begin(3000000);
     delay(1000);
     pinMode(8, OUTPUT);
     digitalWrite(8, LOW);
@@ -117,7 +117,7 @@ void setup() {
 
 void loop() {
     
-    if( esp_now_is_peer_exist(slave_peer_addr) == false ) {
+    if( esp_now_is_peer_exist(slave_peer_addr) == true ) {
         // Serial.println("loop");
         // digitalWrite(LED_PIN, HIGH);
         // delay(500);
