@@ -3,7 +3,9 @@
 #include <esp_wifi.h>
 
 // ESP-NOW 슬레이브 정보를 저장할 전역 변수
-esp_now_peer_info_t slave;
+esp_now_peer_info_t slave = {0,};
+
+#define LED_PIN 8
 #define CHANNEL 1
 #define PRINTSCANRESULTS 1
 #define DELETEBEFOREPAIR 0
@@ -45,7 +47,7 @@ void InitESPNow() {
 
 // 슬레이브 장치 스캔 함수
 void ScanForSlave() {
-    int16_t scanResults = WiFi.scanNetworks(false, false, false, 300, CHANNEL);
+    int16_t scanResults = WiFi.scanNetworks(false, false, false, 100, CHANNEL);
     bool slaveFound = 0;
     memset(&slave, 0, sizeof(slave));
 
@@ -145,23 +147,38 @@ void deletePeer() {
 // 데이터 전송 함수
 void sendData() {
     const uint8_t *peer_addr = slave.peer_addr;
-    if (Serial1.available() > 0) {
-        int len = Serial.readBytes(myData.message, 512);
+    int len = Serial1.readBytes(myData.message, 512);
+    
+    if( len > 0) {
         esp_err_t result = esp_now_send(peer_addr, (uint8_t *) &myData, len);
-        
         Serial.print("Send Status: ");
+        Serial.print("len: ");
+        Serial.print(len);
+        Serial.print(", peer_addr: ");
+        Serial.print(slave.peer_addr[0], HEX);
+        Serial.print(slave.peer_addr[1], HEX);
+        Serial.print(slave.peer_addr[2], HEX);
+        Serial.print(slave.peer_addr[3], HEX);
+        Serial.print(slave.peer_addr[4], HEX);
+        Serial.print(slave.peer_addr[5], HEX);
+        Serial.print(" ");
         if (result == ESP_OK) {
             Serial.println("Success");
         } else {
             Serial.println("Failed");
         }
     }
+    else {
+        Serial.println("No data to send");
+    }
 }
 
 void setup() {
     // 시리얼 통신 초기화
     Serial.begin(921600);
-    Serial1.begin(921600, SERIAL_8N1, 20, 21);  // RX:20, TX:21 핀 사용
+    Serial1.begin(30000000, SERIAL_8N1, 20, 21);  // RX:20, TX:21 핀 사용
+    pinMode(LED_PIN, OUTPUT);
+    delay(1000);
     
     // WiFi 모드 설정
     WiFi.mode(WIFI_STA);
@@ -174,16 +191,34 @@ void setup() {
 }
 
 void loop() {
-    // 슬레이브 검색
-    ScanForSlave();
-    if (slave.channel == CHANNEL) {
+    static bool led_state = false;
+    
+    if( slave.peer_addr[0] == 0x00
+        && slave.peer_addr[1] == 0x00
+        && slave.peer_addr[2] == 0x00
+        && slave.peer_addr[3] == 0x00
+        && slave.peer_addr[4] == 0x00
+        && slave.peer_addr[5] == 0x00
+    ) {
+        // 슬레이브 검색
+        ScanForSlave();
+
         // 페어링 상태 확인 및 데이터 전송
         bool isPaired = manageSlave();
-        if (isPaired) {
-            sendData();
-        } else {
+        if( !isPaired ) {
             Serial.println("Slave pair failed!");
         }
     }
-    delay(100);
+    else {
+        sendData();
+
+        if( led_state ) {
+            digitalWrite(LED_PIN, HIGH);
+        }
+        else {
+            digitalWrite(LED_PIN, LOW);
+        }
+        led_state = !led_state;
+    }
+    delay(10);
 }
