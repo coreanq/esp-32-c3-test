@@ -34,7 +34,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
         return;
     }
     else {
-        memcpy(&myData, incomingData, sizeof(myData));
+        memcpy(&myData, incomingData, len);
         myData.message[len] = '\0';
         Serial.print(myData.message);
     }
