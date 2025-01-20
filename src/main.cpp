@@ -1,6 +1,7 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include <math.h>
 
 // ESP-NOW 슬레이브 정보를 저장할 전역 변수
 esp_now_peer_info_t slave = {0,};
@@ -9,13 +10,18 @@ esp_now_peer_info_t slave = {0,};
 #define CHANNEL 1
 #define PRINTSCANRESULTS 1
 #define DELETEBEFOREPAIR 0
-#define DEBUG_MSG_BUFFER_SIZE 512
+#define DEBUG_MSG_BUFFER_SIZE 4096
 
 // 데이터 전송을 위한 구조체 정의
 typedef struct struct_message {
     char message[DEBUG_MSG_BUFFER_SIZE];
 } struct_message;
+
 struct_message myData;
+struct_message myRecvData;
+
+QueueHandle_t msgQueue;
+bool isTxDone = true;
 
 // 함수 선언
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len);
@@ -24,15 +30,15 @@ void deletePeer();
 
 // 데이터 전송 콜백 함수
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    Serial1.print("\r\nLast Packet Send Status:\t");
     Serial1.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
 // 데이터 수신 콜백 함수
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
-    memcpy(&myData, incomingData, sizeof(myData));
+    memcpy(&myRecvData, incomingData, len);
+    myRecvData.message[len] = '\0';
     Serial1.print("recv data : ");
-    Serial1.println(myData.message);
+    Serial1.println(myRecvData.message);
 }
 
 // ESP-NOW 초기화 함수
@@ -148,39 +154,66 @@ void deletePeer() {
 // 데이터 전송 함수
 void sendData() {
     const uint8_t *peer_addr = slave.peer_addr;
-    int len = 0;
-
+    int ItemCount = 0;
     do {
-        len = Serial0.readBytes(myData.message, DEBUG_MSG_BUFFER_SIZE);
-        myData.message[len] = '\0';
+        if( isTxDone == false) {
+            break;
+        }
+        ItemCount = uxQueueMessagesWaiting( msgQueue );
+        
+        if( ItemCount == 0 ){
+            break;
+        }
+        
+        if( ItemCount > 200 ) {
+            // esp now packet size 256
+            ItemCount = 200;
+        }
+        
+        for( int i = 0; i < ItemCount; i++ ) {
+            xQueueReceive( msgQueue, &myData.message[i],  0 );
+        }
 
-        if( len > 0) {
-            esp_err_t result = esp_now_send(peer_addr, (uint8_t *) &myData, len);
+        if( ItemCount > 0) {
+            esp_err_t result = esp_now_send(peer_addr, (uint8_t *) &myData, ItemCount);
 
+            myData.message[ItemCount] = '\0';
             Serial1.print(myData.message);
             Serial1.println("");
 
             if (result == ESP_OK) {
-            } else {
+            } 
+            else {
+                isTxDone = true;
                 Serial.println("Failed");
             }
         }
         else {
-            // Serial1.println("No data to send");
+            isTxDone = true;
         }
-    }while( len != 0);
+    }while(false);
+}
+
+void recvDataToQueue() {
+    int len = Serial0.readBytes(myData.message, DEBUG_MSG_BUFFER_SIZE);
+    myData.message[len] = '\0';
+    
+    for ( int i = 0; i < len; i++ ) {
+        xQueueSend( msgQueue, &myData.message[i], 0 );
+    }
 }
 
 void setup() {
-    // 시리얼 통신 초기화
-    Serial.begin(921600);
-    Serial0.begin(3000000, SERIAL_8N1, 21, 20);  // RX:20, TX:21 핀 사용
-    Serial1.begin(3000000, SERIAL_8N1, 1, 0);  // RX:1, TX:0 핀 사용
-
+    // 시리얼 통신 초기화, before bgein
     Serial0.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
     Serial0.setTimeout(1);
     Serial1.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
     Serial1.setTimeout(1);
+
+    Serial.begin(921600);
+    Serial0.begin(3000000, SERIAL_8N1, 21, 20);  // RX:20, TX:21 핀 사용
+    Serial1.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
+
 
     pinMode(LED_PIN, OUTPUT);
     delay(1000);
@@ -193,7 +226,11 @@ void setup() {
     InitESPNow();
     esp_now_register_send_cb(OnDataSent);
     esp_now_register_recv_cb(OnDataRecv);
+
+    // Queue 생성
+    msgQueue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
 }
+
 
 void loop() {
     static bool led_state = false;
@@ -215,6 +252,8 @@ void loop() {
         }
     }
     else {
+        
+        recvDataToQueue(); 
         sendData();
 
         if( led_state ) {
