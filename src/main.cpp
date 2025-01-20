@@ -36,7 +36,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
     else {
         memcpy(&myData, incomingData, sizeof(myData));
         myData.message[len] = '\0';
-        Serial.println(myData.message);
+        Serial.print(myData.message);
     }
 }
 
@@ -94,10 +94,10 @@ void sendData() {
 
 void setup() {
     // 시리얼 통신 초기화
-    Serial.begin(3000000);
+    Serial.begin(921600);
     delay(1000);
-    pinMode(8, OUTPUT);
-    digitalWrite(8, LOW);
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW);
     
     Serial.println("ESP-NOW Slave Start");
     
@@ -116,6 +116,7 @@ void setup() {
 }
 
 void loop() {
+    static bool led_state = false;
     
     if( esp_now_is_peer_exist(slave_peer_addr) == true ) {
         // Serial.println("loop");
@@ -124,13 +125,9 @@ void loop() {
         // digitalWrite(LED_PIN, LOW);
         // delay(500);
         sendData();
+
+        digitalWrite(LED_PIN, led_state);
+        led_state = !led_state;
     }
-    else {
-        digitalWrite(LED_PIN, HIGH);
-        delay(500);
-        digitalWrite(LED_PIN, LOW);
-        delay(500);
-    }
-    
-    
+    delay(10);
 }
