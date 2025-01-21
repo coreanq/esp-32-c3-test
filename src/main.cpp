@@ -220,11 +220,12 @@ void setup() {
     
     // WiFi 모드 설정
     WiFi.mode(WIFI_STA);
-    Serial1.println("wifi set complete");
-    Serial1.println(WiFi.softAPmacAddress().c_str());
 
     // ESP-NOW 초기화 및 콜백 등록
     InitESPNow();
+
+    Serial1.println("Init ESPNOW");
+    Serial1.println(WiFi.softAPmacAddress().c_str());
     esp_now_register_send_cb(OnDataSent);
     esp_now_register_recv_cb(OnDataRecv);
 
