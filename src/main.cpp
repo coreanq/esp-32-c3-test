@@ -17,6 +17,9 @@ typedef struct struct_message {
 } struct_message;
 struct_message myData;
 
+
+bool isConnected = false;
+
 // 함수 선언
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len);
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
@@ -38,6 +41,9 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
         myData.message[len] = '\0';
         Serial.print(myData.message);
     }
+    
+    memcpy(slave_peer_addr, mac, 6);
+    isConnected = true;
 }
 
 // ESP-NOW 초기화 함수
@@ -67,29 +73,38 @@ void configDeviceAP() {
 // 데이터 전송 함수
 void sendData() {
     int c = Serial.read();
-    if( c != -1) {
-        Serial.print((char)c);
+
+    do {
+        if( c == -1) {
+            break;
+        }
+        if( slave_peer_addr[0] == 0x00
+            && slave_peer_addr[1] == 0x00
+            && slave_peer_addr[2] == 0x00
+            && slave_peer_addr[3] == 0x00
+            && slave_peer_addr[4] == 0x00
+            && slave_peer_addr[5] == 0x00 ){
+                break;
+        }
+
         esp_err_t result = esp_now_send(slave_peer_addr, (uint8_t *) &c, 1);
+        Serial.print(slave_peer_addr[0], HEX);
+        Serial.print(slave_peer_addr[1], HEX);
+        Serial.print(slave_peer_addr[2], HEX);
+        Serial.print(slave_peer_addr[3], HEX);
+        Serial.print(slave_peer_addr[4], HEX);
+        Serial.print(slave_peer_addr[5], HEX);
+        Serial.println("");
         if (result == ESP_OK) {
             // Serial.print(c);
         } else {
-            // Serial.println("Failed");
+            Serial.println("Failed");
+            Serial.print( esp_err_to_name(result) );
+            Serial.println("");
+                
         }
-    }
-    else{
-        // Serial.println("No data");
-    }
-    // if (Serial.available() > 0) {
-    //     int len = Serial.readBytes(myData.message, 512);
-    //     esp_err_t result = esp_now_send(slave_peer_addr, (uint8_t *) &myData, len);
-    //     myData.message[len] = '\0';
-    //     Serial.println(myData.message);
-    //     if (result == ESP_OK) {
-    //         Serial.print(myData.message);
-    //     } else {
-    //         Serial.println("Failed");
-    //     }
-    // }
+
+    }while(false);
 }
 
 void setup() {
@@ -97,7 +112,7 @@ void setup() {
     Serial.begin(921600);
     delay(1000);
     pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW);
+    digitalWrite(LED_PIN, HIGH);
     
     Serial.println("ESP-NOW Slave Start");
     
@@ -107,7 +122,7 @@ void setup() {
 
     // This is the mac address of the Slave in AP Mode
     Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
-    memcpy(slave_peer_addr, WiFi.softAPmacAddress().c_str(), ESP_NOW_ETH_ALEN);
+    // memcpy(slave_peer_addr, WiFi.softAPmacAddress().c_str(), ESP_NOW_ETH_ALEN);
     // Init ESPNow with a fallback logic
     InitESPNow();
 
@@ -118,14 +133,8 @@ void setup() {
 void loop() {
     static bool led_state = false;
     
-    if( esp_now_is_peer_exist(slave_peer_addr) == true ) {
-        // Serial.println("loop");
-        // digitalWrite(LED_PIN, HIGH);
-        // delay(500);
-        // digitalWrite(LED_PIN, LOW);
-        // delay(500);
+    if( isConnected == true ) {
         sendData();
-
         digitalWrite(LED_PIN, led_state);
         led_state = !led_state;
     }
