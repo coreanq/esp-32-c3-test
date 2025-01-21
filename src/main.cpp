@@ -178,8 +178,8 @@ void sendData() {
             esp_err_t result = esp_now_send(peer_addr, (uint8_t *) &myData, ItemCount);
 
             myData.message[ItemCount] = '\0';
-            Serial1.print(myData.message);
-            Serial1.println("");
+            // Serial1.print(myData.message);
+            // Serial1.println("");
 
             if (result == ESP_OK) {
             } 
@@ -221,6 +221,7 @@ void setup() {
     // WiFi 모드 설정
     WiFi.mode(WIFI_STA);
     Serial1.println("wifi set complete");
+    Serial1.println(WiFi.softAPmacAddress().c_str());
 
     // ESP-NOW 초기화 및 콜백 등록
     InitESPNow();
