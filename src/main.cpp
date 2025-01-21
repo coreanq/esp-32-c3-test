@@ -30,7 +30,7 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 
 // 데이터 수신 콜백 함수
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) {
     
     if( len > sizeof(myData.message)) {
         Serial.println("Data too long");
@@ -41,8 +41,16 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
         myData.message[len] = '\0';
         Serial.print(myData.message);
     }
-    
-    memcpy(slave_peer_addr, mac, 6);
+
+    if( slave_peer_addr[0] == 0x00
+        && slave_peer_addr[1] == 0x00
+        && slave_peer_addr[2] == 0x00
+        && slave_peer_addr[3] == 0x00
+        && slave_peer_addr[4] == 0x00
+        && slave_peer_addr[5] == 0x00 ){
+        memcpy(slave_peer_addr, mac_addr, 6);
+    }
+
     isConnected = true;
 }
 
