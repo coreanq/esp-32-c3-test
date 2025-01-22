@@ -30,7 +30,9 @@ void deletePeer();
 
 // 데이터 전송 콜백 함수
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    Serial1.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+    Serial1.print("Send data to : ");   
+    Serial1.printf("%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+    Serial1.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
 }
 
 // 데이터 수신 콜백 함수
