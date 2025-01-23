@@ -45,7 +45,7 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, in
 
 // ESP-NOW 초기화 함수
 void InitESPNow() {
-    WiFi.disconnect();
+    // WiFi.disconnect();
     if (esp_now_init() == ESP_OK) {
         Serial1.println("ESPNow Init Success");
     } else {
@@ -215,23 +215,24 @@ void setup() {
     Serial.begin(921600);
     Serial0.begin(3000000, SERIAL_8N1, 21, 20);  // RX:20, TX:21 핀 사용
     Serial1.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
+    delay(1000);
 
+    Serial1.print("\n\n-------------------------------------------------------------------\n");
+    Serial1.print("Current Date: ");
+    Serial1.print(__DATE__);
+    Serial1.println(__TIME__);
 
     pinMode(LED_PIN, OUTPUT);
-    delay(1000);
     
     // WiFi 모드 설정
     WiFi.mode(WIFI_STA);
 
+    Serial1.print("STA MAC Address: ");
+    Serial1.println(WiFi.macAddress().c_str());
+
     // ESP-NOW 초기화 및 콜백 등록
     InitESPNow();
-
-    Serial1.print("Init");
-    Serial1.print("Current Date: ");
-    Serial1.print(__DATE__);
-    Serial1.print(" Time: ");
-    Serial1.println(__TIME__);
-    Serial1.println(WiFi.softAPmacAddress().c_str());
+    
     esp_now_register_send_cb(OnDataSent);
     esp_now_register_recv_cb(OnDataRecv);
 
