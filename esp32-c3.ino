@@ -4,12 +4,15 @@
 
 #define LED_PIN 8
 
-
-uint8_t slave_peer_addr[ESP_NOW_ETH_ALEN] = {0x00, };
+// ESP-NOW 슬레이브 정보를 저장할 전역 변수
+esp_now_peer_info_t slave = {0,};
 
 #define CHANNEL 1
 #define PRINTSCANRESULTS 3
 #define DELETEBEFOREPAIR 0
+#define DEBUG_MSG_BUFFER_SIZE 4096
+
+#define DEBUG_PORT Serial0
 
 // 데이터 전송을 위한 구조체 정의
 typedef struct struct_message {
@@ -32,8 +35,8 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) 
 {
     if( isConnected == false ) {
-        Serial.print("Peer MAC : ");
-        Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X", 
+        DEBUG_PORT.print("Peer MAC : ");
+        DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", 
             esp_now_info->src_addr[0], 
             esp_now_info->src_addr[1], 
             esp_now_info->src_addr[2], 
@@ -41,30 +44,46 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, in
             esp_now_info->src_addr[4], 
             esp_now_info->src_addr[5]);
 
-        memcpy(slave_peer_addr, esp_now_info->src_addr, 6);
-        slave_peer_addr[5] = slave_peer_addr[5] + 1;
+        memcpy(slave.peer_addr, esp_now_info->src_addr, 6);
+        slave.channel = CHANNEL;
+
+        // 페어링 상태 확인
+        DEBUG_PORT.print("Slave Status: ");
+        bool exists = esp_now_is_peer_exist(slave.peer_addr);
+        if (exists) {
+            DEBUG_PORT.println("Already Paired");
+        } else {
+            // 새로운 페어링 시도
+            esp_err_t addStatus = esp_now_add_peer(&slave);
+            if (addStatus == ESP_OK) {
+                DEBUG_PORT.println("Pair success");
+            } else {
+                DEBUG_PORT.println("Pair failed");
+            }
+        }
     }
-    
+        
     if( data_len > sizeof(myData.message)) {
-        Serial.println("Data too long");
+        DEBUG_PORT.println("Data too long");
         return;
     }
     else {
         memcpy(&myData, data, data_len);
         myData.message[data_len] = '\0';
-        Serial.print(myData.message);
+        DEBUG_PORT.print(myData.message);
     }
 
     isConnected = true;
+    
 }
 
 // ESP-NOW 초기화 함수
 void InitESPNow() {
     WiFi.disconnect();
     if (esp_now_init() == ESP_OK) {
-        Serial.println("ESPNow Init Success");
+        DEBUG_PORT.println("ESPNow Init Success");
     } else {
-        Serial.println("ESPNow Init Failed");
+        DEBUG_PORT.println("ESPNow Init Failed");
         ESP.restart();
     }
 }
@@ -74,10 +93,10 @@ void configDeviceAP() {
   const char *SSID = "Slave_1";
   bool result = WiFi.softAP("Slave_1", "kcpark1234", CHANNEL, 0);
   if (!result) {
-    Serial.println("AP Config failed.");
+    DEBUG_PORT.println("AP Config failed.");
   } else {
-    Serial.println("AP Config Success. Broadcasting with AP: " + String(SSID));
-    Serial.print("AP CHANNEL "); Serial.println(WiFi.channel());
+    DEBUG_PORT.println("AP Config Success. Broadcasting with AP: " + String(SSID));
+    DEBUG_PORT.print("AP CHANNEL "); DEBUG_PORT.println(WiFi.channel());
   }
 }
 
@@ -86,7 +105,7 @@ void configDeviceAP() {
 void sendData() {
     
     char buffer[512];
-    int len = Serial.readBytes(buffer, 512);
+    int len = DEBUG_PORT.readBytes(buffer, 512);
 
     do {
         if( len == -1 || len == 0 ) {
@@ -97,18 +116,19 @@ void sendData() {
             break;
         }
 
-        esp_err_t result = esp_now_send(slave_peer_addr, (uint8_t *) buffer, len);
+        esp_err_t result = esp_now_send(slave.peer_addr, (uint8_t *) buffer, len);
         
-        Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X", slave_peer_addr[0], slave_peer_addr[1], slave_peer_addr[2], slave_peer_addr[3], slave_peer_addr[4], slave_peer_addr[5]);
-        Serial.println("");
+        DEBUG_PORT.print("Send to ");
+        DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", slave.peer_addr[0], slave.peer_addr[1], slave.peer_addr[2], slave.peer_addr[3], slave.peer_addr[4], slave.peer_addr[5]);
+        DEBUG_PORT.println("");
         if (result == ESP_OK) {
-            // Serial.print(c);
+            // DEBUG_PORT.print(c);
         } else {
-            Serial.println("Failed");
-            Serial.print( "len : " );
-            Serial.print( len );
-            Serial.print( esp_err_to_name(result) );
-            Serial.println("");
+            DEBUG_PORT.println("Failed");
+            DEBUG_PORT.print( "len : " );
+            DEBUG_PORT.println( len );
+            DEBUG_PORT.print( esp_err_to_name(result) );
+            DEBUG_PORT.println("");
                 
         }
 
@@ -116,25 +136,31 @@ void sendData() {
 }
 
 void setup() {
-    // 시리얼 통신 초기화
+    // 시리얼 통신 초기화, before bgein
+    Serial0.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
+    Serial0.setTimeout(1);
     Serial.setTimeout(1);
+
     Serial.begin(921600);
+    Serial0.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
+
     delay(1000);
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
-    Serial.print("Date : ");
-    Serial.println(__DATE__);
-    Serial.print("Time : ");
-    Serial.println(__TIME__);
-    Serial.println("ESP-NOW Slave Hello");
+    DEBUG_PORT.print("\n\n-------------------------------------------------------------------\n");
+    DEBUG_PORT.print("Date : ");
+    DEBUG_PORT.println(__DATE__);
+    DEBUG_PORT.print("Time : ");
+    DEBUG_PORT.println(__TIME__);
     
     // WiFi 모드 설정
     WiFi.mode(WIFI_AP);
     configDeviceAP();
 
     // This is the mac address of the Slave in AP Mode
-    Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
+    DEBUG_PORT.print("AP MAC Address: "); 
+    DEBUG_PORT.println(WiFi.softAPmacAddress());
 
     // Init ESPNow with a fallback logic
     InitESPNow();
