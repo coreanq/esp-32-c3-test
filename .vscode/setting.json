@@ -2,7 +2,7 @@
     "arduino.clearOutputOnBuild": true,
     "arduino.useArduinoCli": true,
     "arduino.path": "C:\\Program Files\\Arduino CLI",
-    "arduino.logLevel": "info",
+    "arduino.logLevel": "verbose",
     "arduino.allowPDEFiletype": false,
     "arduino.enableUSBDetection": true,
     "arduino.disableTestingOpen": false,

@@ -42,6 +42,7 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, in
             esp_now_info->src_addr[5]);
 
         memcpy(slave_peer_addr, esp_now_info->src_addr, 6);
+        slave_peer_addr[5] = slave_peer_addr[5] + 1;
     }
     
     if( data_len > sizeof(myData.message)) {
@@ -122,6 +123,10 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
+    Serial.print("Date : ");
+    Serial.println(__DATE__);
+    Serial.print("Time : ");
+    Serial.println(__TIME__);
     Serial.println("ESP-NOW Slave Hello");
     
     // WiFi 모드 설정
