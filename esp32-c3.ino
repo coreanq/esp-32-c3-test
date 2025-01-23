@@ -5,10 +5,10 @@
 #define LED_PIN 8
 
 
-uint8_t slave_peer_addr[ESP_NOW_ETH_ALEN];
+uint8_t slave_peer_addr[ESP_NOW_ETH_ALEN] = {0x00, };
 
 #define CHANNEL 1
-#define PRINTSCANRESULTS 1
+#define PRINTSCANRESULTS 3
 #define DELETEBEFOREPAIR 0
 
 // 데이터 전송을 위한 구조체 정의
@@ -21,34 +21,37 @@ struct_message myData;
 bool isConnected = false;
 
 // 함수 선언
-void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len);
+void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len);
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
-void deletePeer();
 
 // 데이터 전송 콜백 함수
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 
 // 데이터 수신 콜백 함수
-void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) {
+void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) 
+{
+    if( isConnected == false ) {
+        Serial.print("Peer MAC : ");
+        Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X", 
+            esp_now_info->src_addr[0], 
+            esp_now_info->src_addr[1], 
+            esp_now_info->src_addr[2], 
+            esp_now_info->src_addr[3], 
+            esp_now_info->src_addr[4], 
+            esp_now_info->src_addr[5]);
+
+        memcpy(slave_peer_addr, esp_now_info->src_addr, 6);
+    }
     
-    if( len > sizeof(myData.message)) {
+    if( data_len > sizeof(myData.message)) {
         Serial.println("Data too long");
         return;
     }
     else {
-        memcpy(&myData, incomingData, len);
-        myData.message[len] = '\0';
+        memcpy(&myData, data, data_len);
+        myData.message[data_len] = '\0';
         Serial.print(myData.message);
-    }
-
-    if( slave_peer_addr[0] == 0x00
-        && slave_peer_addr[1] == 0x00
-        && slave_peer_addr[2] == 0x00
-        && slave_peer_addr[3] == 0x00
-        && slave_peer_addr[4] == 0x00
-        && slave_peer_addr[5] == 0x00 ){
-        memcpy(slave_peer_addr, mac_addr, 6);
     }
 
     isConnected = true;
@@ -80,33 +83,29 @@ void configDeviceAP() {
 
 // 데이터 전송 함수
 void sendData() {
-    int c = Serial.read();
+    
+    char buffer[512];
+    int len = Serial.readBytes(buffer, 512);
 
     do {
-        if( c == -1) {
+        if( len == -1 || len == 0 ) {
             break;
         }
-        if( slave_peer_addr[0] == 0x00
-            && slave_peer_addr[1] == 0x00
-            && slave_peer_addr[2] == 0x00
-            && slave_peer_addr[3] == 0x00
-            && slave_peer_addr[4] == 0x00
-            && slave_peer_addr[5] == 0x00 ){
-                break;
+        
+        if( isConnected == false ) {
+            break;
         }
 
-        esp_err_t result = esp_now_send(slave_peer_addr, (uint8_t *) &c, 1);
-        Serial.print(slave_peer_addr[0], HEX);
-        Serial.print(slave_peer_addr[1], HEX);
-        Serial.print(slave_peer_addr[2], HEX);
-        Serial.print(slave_peer_addr[3], HEX);
-        Serial.print(slave_peer_addr[4], HEX);
-        Serial.print(slave_peer_addr[5], HEX);
+        esp_err_t result = esp_now_send(slave_peer_addr, (uint8_t *) buffer, len);
+        
+        Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X", slave_peer_addr[0], slave_peer_addr[1], slave_peer_addr[2], slave_peer_addr[3], slave_peer_addr[4], slave_peer_addr[5]);
         Serial.println("");
         if (result == ESP_OK) {
             // Serial.print(c);
         } else {
             Serial.println("Failed");
+            Serial.print( "len : " );
+            Serial.print( len );
             Serial.print( esp_err_to_name(result) );
             Serial.println("");
                 
@@ -117,12 +116,13 @@ void sendData() {
 
 void setup() {
     // 시리얼 통신 초기화
+    Serial.setTimeout(1);
     Serial.begin(921600);
     delay(1000);
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
-    
-    Serial.println("ESP-NOW Slave Start");
+
+    Serial.println("ESP-NOW Slave Hello");
     
     // WiFi 모드 설정
     WiFi.mode(WIFI_AP);
@@ -130,7 +130,7 @@ void setup() {
 
     // This is the mac address of the Slave in AP Mode
     Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
-    // memcpy(slave_peer_addr, WiFi.softAPmacAddress().c_str(), ESP_NOW_ETH_ALEN);
+
     // Init ESPNow with a fallback logic
     InitESPNow();
 
