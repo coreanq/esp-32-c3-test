@@ -23,7 +23,7 @@ QueueHandle_t msgQueue;
 bool isTxDone = true;
 
 // 함수 선언
-void OnDataRecv(const esp_recv_info_t *esp_now_info, const uint8_t *data, int data_len);
+void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len);
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
 void deletePeer();
 
@@ -35,7 +35,7 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 
 // 데이터 수신 콜백 함수
-void OnDataRecv(const esp_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
+void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
     memcpy(&myRecvData, data, data_len);
     myRecvData.message[data_len] = '\0';
     Serial1.print("recv data : ");
@@ -229,7 +229,7 @@ void setup() {
     Serial1.print("Init");
     Serial1.print("Current Date: ");
     Serial1.print(__DATE__);
-    Serial1.print("Current Time: ");
+    Serial1.print(" Time: ");
     Serial1.println(__TIME__);
     Serial1.println(WiFi.softAPmacAddress().c_str());
     esp_now_register_send_cb(OnDataSent);
