@@ -1,7 +1,6 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
-#include <math.h>
 
 // ESP-NOW 슬레이브 정보를 저장할 전역 변수
 esp_now_peer_info_t slave = {0,};
@@ -24,7 +23,7 @@ QueueHandle_t msgQueue;
 bool isTxDone = true;
 
 // 함수 선언
-void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len);
+void OnDataRecv(const esp_recv_info_t *esp_now_info, const uint8_t *data, int data_len);
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
 void deletePeer();
 
@@ -36,10 +35,11 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 
 // 데이터 수신 콜백 함수
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
-    memcpy(&myRecvData, incomingData, len);
-    myRecvData.message[len] = '\0';
+void OnDataRecv(const esp_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
+    memcpy(&myRecvData, data, data_len);
+    myRecvData.message[data_len] = '\0';
     Serial1.print("recv data : ");
+    // Serial1.printf("%02X:%02X:%02X:%02X:%02X:%02X", esp_now_info->src_addr[0], esp_now_info->src_addr[1], esp_now_info->src_addr[2], esp_now_info->src_addr[3], esp_now_info->src_addr[4], esp_now_info->src_addr[5]);
     Serial1.println(myRecvData.message);
 }
 
@@ -226,7 +226,11 @@ void setup() {
     // ESP-NOW 초기화 및 콜백 등록
     InitESPNow();
 
-    Serial1.println("Init ESPNOW");
+    Serial1.print("Init");
+    Serial1.print("Current Date: ");
+    Serial1.print(__DATE__);
+    Serial1.print("Current Time: ");
+    Serial1.println(__TIME__);
     Serial1.println(WiFi.softAPmacAddress().c_str());
     esp_now_register_send_cb(OnDataSent);
     esp_now_register_recv_cb(OnDataRecv);
