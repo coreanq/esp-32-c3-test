@@ -11,6 +11,9 @@ esp_now_peer_info_t slave = {0,};
 #define DELETEBEFOREPAIR 0
 #define DEBUG_MSG_BUFFER_SIZE 4096
 
+#define BYPASS_SRC_PORT Serial0
+#define DEBUG_PORT      Serial1
+
 // 데이터 전송을 위한 구조체 정의
 typedef struct struct_message {
     char message[DEBUG_MSG_BUFFER_SIZE];
@@ -29,27 +32,26 @@ void deletePeer();
 
 // 데이터 전송 콜백 함수
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    Serial1.print("Send data to : ");   
-    Serial1.printf("%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-    Serial1.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
+    DEBUG_PORT.print("Send data to : ");   
+    DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+    DEBUG_PORT.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
 }
 
 // 데이터 수신 콜백 함수
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
     memcpy(&myRecvData, data, data_len);
     myRecvData.message[data_len] = '\0';
-    Serial1.print("recv data : ");
+    DEBUG_PORT.print("recv data : ");
     // Serial1.printf("%02X:%02X:%02X:%02X:%02X:%02X", esp_now_info->src_addr[0], esp_now_info->src_addr[1], esp_now_info->src_addr[2], esp_now_info->src_addr[3], esp_now_info->src_addr[4], esp_now_info->src_addr[5]);
-    Serial1.println(myRecvData.message);
+    DEBUG_PORT.println(myRecvData.message);
 }
 
 // ESP-NOW 초기화 함수
 void InitESPNow() {
-    // WiFi.disconnect();
     if (esp_now_init() == ESP_OK) {
-        Serial1.println("ESPNow Init Success");
+        DEBUG_PORT.println("ESPNow Init Success");
     } else {
-        Serial1.println("ESPNow Init Failed");
+        DEBUG_PORT.println("ESPNow Init Failed");
         ESP.restart();
     }
 }
@@ -62,9 +64,9 @@ void ScanForSlave() {
 
     Serial1.println("");
     if (scanResults == 0) {
-        Serial1.println("No WiFi devices in AP Mode found");
+        DEBUG_PORT.println("No WiFi devices in AP Mode found");
     } else {
-        Serial1.print("Found "); Serial1.print(scanResults); Serial1.println(" devices ");
+        DEBUG_PORT.print("Found "); DEBUG_PORT.print(scanResults); DEBUG_PORT.println(" devices ");
         for (int i = 0; i < scanResults; ++i) {
             // 스캔된 장치의 정보 가져오기
             String SSID = WiFi.SSID(i);
@@ -72,20 +74,20 @@ void ScanForSlave() {
             String BSSIDstr = WiFi.BSSIDstr(i);
 
             if (PRINTSCANRESULTS) {
-                Serial1.print(i + 1); Serial1.print(": ");
-                Serial1.print(SSID); Serial1.print(" (");
-                Serial1.print(RSSI); Serial1.print(")");
-                Serial1.println("");
+                DEBUG_PORT.print(i + 1); DEBUG_PORT.print(": ");
+                DEBUG_PORT.print(SSID); DEBUG_PORT.print(" (");
+                DEBUG_PORT.print(RSSI); DEBUG_PORT.print(")");
+                DEBUG_PORT.println("");
             }
             delay(10);
 
             // 'Slave'로 시작하는 SSID를 찾음
             if (SSID.indexOf("Slave") == 0) {
-                Serial1.println("Found a Slave.");
-                Serial1.print(i + 1); Serial1.print(": "); Serial1.print(SSID);
-                Serial1.print(" ["); Serial1.print(BSSIDstr); Serial1.print("]");
-                Serial1.print(" ("); Serial1.print(RSSI); Serial1.print(")");
-                Serial1.println("");
+                DEBUG_PORT.println("Found a Slave.");
+                DEBUG_PORT.print(i + 1); DEBUG_PORT.print(": "); DEBUG_PORT.print(SSID);
+                DEBUG_PORT.print(" ["); DEBUG_PORT.print(BSSIDstr); DEBUG_PORT.print("]");
+                DEBUG_PORT.print(" ("); DEBUG_PORT.print(RSSI); DEBUG_PORT.print(")");
+                DEBUG_PORT.println("");
 
                 // MAC 주소 파싱
                 int mac[6];
@@ -105,9 +107,9 @@ void ScanForSlave() {
     }
 
     if (slaveFound) {
-        Serial1.println("Slave Found, processing..");
+        DEBUG_PORT.println("Slave Found, processing..");
     } else {
-        Serial1.println("Slave Not Found, trying again.");
+        DEBUG_PORT.println("Slave Not Found, trying again.");
     }
 
     WiFi.scanDelete();  // 스캔 결과 정리
@@ -121,35 +123,35 @@ bool manageSlave() {
         }
 
         // 페어링 상태 확인
-        Serial1.print("Slave Status: ");
+        DEBUG_PORT.print("Slave Status: ");
         bool exists = esp_now_is_peer_exist(slave.peer_addr);
         if (exists) {
-            Serial1.println("Already Paired");
+            DEBUG_PORT.println("Already Paired");
             return true;
         } else {
             // 새로운 페어링 시도
             esp_err_t addStatus = esp_now_add_peer(&slave);
             if (addStatus == ESP_OK) {
-                Serial1.println("Pair success");
+                DEBUG_PORT.println("Pair success");
                 return true;
             } else {
-                Serial1.println("Pair failed");
+                DEBUG_PORT.println("Pair failed");
                 return false;
             }
         }
     }
-    Serial1.println("No Slave found to process");
+    DEBUG_PORT.println("No Slave found to process");
     return false;
 }
 
 // 페어링된 슬레이브 삭제
 void deletePeer() {
     esp_err_t delStatus = esp_now_del_peer(slave.peer_addr);
-    Serial1.print("Slave Delete Status: ");
+    DEBUG_PORT.print("Slave Delete Status: ");
     if (delStatus == ESP_OK) {
-        Serial1.println("Success");
+        DEBUG_PORT.println("Success");
     } else {
-        Serial1.println("Error");
+        DEBUG_PORT.println("Error");
     }
 }
 
@@ -187,7 +189,7 @@ void sendData() {
             } 
             else {
                 isTxDone = true;
-                Serial.println("Failed");
+                DEBUG_PORT.println("Failed");
             }
         }
         else {
@@ -197,7 +199,7 @@ void sendData() {
 }
 
 void recvDataToQueue() {
-    int len = Serial0.readBytes(myData.message, DEBUG_MSG_BUFFER_SIZE);
+    int len = BYPASS_SRC_PORT.readBytes(myData.message, DEBUG_MSG_BUFFER_SIZE);
     myData.message[len] = '\0';
     
     for ( int i = 0; i < len; i++ ) {
@@ -207,28 +209,29 @@ void recvDataToQueue() {
 
 void setup() {
     // 시리얼 통신 초기화, before bgein
-    Serial0.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
-    Serial0.setTimeout(1);
-    Serial1.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
-    Serial1.setTimeout(1);
+    BYPASS_SRC_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
+    BYPASS_SRC_PORT.setTimeout(1);
+    DEBUG_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
+    DEBUG_PORT.setTimeout(1);
 
     Serial.begin(921600);
-    Serial0.begin(3000000, SERIAL_8N1, 21, 20);  // RX:20, TX:21 핀 사용
-    Serial1.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
+    BYPASS_SRC_PORT.begin(3000000, SERIAL_8N1, 21, 20);  // RX:20, TX:21 핀 사용
+    DEBUG_PORT.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
     delay(1000);
 
-    Serial1.print("\n\n-------------------------------------------------------------------\n");
-    Serial1.print("Current Date: ");
-    Serial1.print(__DATE__);
-    Serial1.println(__TIME__);
+    DEBUG_PORT.print("\n\n-------------------------------------------------------------------\n");
+    DEBUG_PORT.print("Current Date: ");
+    DEBUG_PORT.print(__DATE__);
+    DEBUG_PORT.print(" ");
+    DEBUG_PORT.println(__TIME__);
 
     pinMode(LED_PIN, OUTPUT);
     
     // WiFi 모드 설정
     WiFi.mode(WIFI_STA);
 
-    Serial1.print("STA MAC Address: ");
-    Serial1.println(WiFi.macAddress().c_str());
+    DEBUG_PORT.print("STA MAC Address: ");
+    DEBUG_PORT.println(WiFi.macAddress().c_str());
 
     // ESP-NOW 초기화 및 콜백 등록
     InitESPNow();
@@ -257,7 +260,7 @@ void loop() {
         // 페어링 상태 확인 및 데이터 전송
         bool isPaired = manageSlave();
         if( !isPaired ) {
-            Serial1.println("Slave pair failed!");
+            DEBUG_PORT.println("Slave pair failed!");
         }
     }
     else {
