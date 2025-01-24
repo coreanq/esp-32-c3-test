@@ -150,7 +150,7 @@ void setup() {
     DEBUG_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
     DEBUG_PORT.setTimeout(1);
 
-    Serial.begin(921600);
+    Serial.begin(3000000);
     Serial0.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
 
     delay(1000);
