@@ -14,7 +14,7 @@
 
 // 데이터 전송을 위한 구조체 정의
 typedef struct struct_message {
-    char message[512];
+    char message[DEBUG_MSG_BUFFER_SIZE];
 } struct_message;
 struct_message myData;
 
@@ -116,7 +116,6 @@ void sendData() {
         ItemCount = uxQueueMessagesWaiting( msgQueue );
             
         if( ItemCount == 0 ){
-            DEBUG_PORT.println("Queue Empty");
             break;
         }
 
@@ -133,7 +132,7 @@ void sendData() {
         
         if (result == ESP_OK) {
             myData.message[ItemCount] = '\0';
-            DEBUG_PORT.print(myData.message);
+            // DEBUG_PORT.print(myData.message);
         } else {
             DEBUG_PORT.println("Failed");
             DEBUG_PORT.print( "len : " );
@@ -188,7 +187,6 @@ void loop() {
     char buffer[DEBUG_MSG_BUFFER_SIZE];
     int len = 0;
     
-
     len = DEBUG_PORT.readBytes(buffer, DEBUG_MSG_BUFFER_SIZE);
     
     if( len > 0 ) {
@@ -196,7 +194,7 @@ void loop() {
         led_state = !led_state;
 
         for ( int i = 0; i < len; i++ ) {
-            xQueueSend( msgQueue, &myData.message[i], 0 );
+            xQueueSend( msgQueue, buffer, 0 );
         }
 
         if( isConnected == true ) {
