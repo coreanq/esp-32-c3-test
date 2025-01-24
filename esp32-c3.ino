@@ -4,8 +4,6 @@
 
 #define LED_PIN 8
 
-// ESP-NOW 슬레이브 정보를 저장할 전역 변수
-esp_now_peer_info_t slave = {0,};
 
 #define CHANNEL 1
 #define PRINTSCANRESULTS 3
@@ -20,8 +18,16 @@ typedef struct struct_message {
 } struct_message;
 struct_message myData;
 
-
 bool isConnected = false;
+
+// ESP-NOW 슬레이브 정보를 저장할 전역 변수
+// Send 시 반드시 필요 
+esp_now_peer_info_t slave = {
+    .peer_addr = {0},
+    .channel = CHANNEL,
+    .ifidx = WIFI_IF_AP,
+    .encrypt = false
+};
 
 // 함수 선언
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len);
@@ -115,14 +121,11 @@ void sendData() {
         if( isConnected == false ) {
             break;
         }
-
         esp_err_t result = esp_now_send(slave.peer_addr, (uint8_t *) buffer, len);
-        
-        DEBUG_PORT.print("Send to ");
-        DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", slave.peer_addr[0], slave.peer_addr[1], slave.peer_addr[2], slave.peer_addr[3], slave.peer_addr[4], slave.peer_addr[5]);
-        DEBUG_PORT.println("");
+        buffer[len] = '\0';
+
         if (result == ESP_OK) {
-            // DEBUG_PORT.print(c);
+            DEBUG_PORT.printf("%s", buffer);
         } else {
             DEBUG_PORT.println("Failed");
             DEBUG_PORT.print( "len : " );
@@ -137,12 +140,11 @@ void sendData() {
 
 void setup() {
     // 시리얼 통신 초기화, before bgein
-    Serial0.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
-    Serial0.setTimeout(1);
-    Serial.setTimeout(1);
+    DEBUG_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
+    DEBUG_PORT.setTimeout(1);
 
     Serial.begin(921600);
-    Serial0.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
+    DEBUG_PORT.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
 
     delay(1000);
     pinMode(LED_PIN, OUTPUT);
