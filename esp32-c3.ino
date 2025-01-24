@@ -10,7 +10,7 @@
 #define DELETEBEFOREPAIR 0
 #define DEBUG_MSG_BUFFER_SIZE 4096
 
-#define DEBUG_PORT Serial0
+#define DEBUG_PORT Serial
 
 // 데이터 전송을 위한 구조체 정의
 typedef struct struct_message {
@@ -147,8 +147,8 @@ void sendData() {
 
 void setup() {
     // 시리얼 통신 초기화, before bgein
-    Serial0.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
-    Serial0.setTimeout(1);
+    DEBUG_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
+    DEBUG_PORT.setTimeout(1);
 
     Serial.begin(921600);
     Serial0.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
