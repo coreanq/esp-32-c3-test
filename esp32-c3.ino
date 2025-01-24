@@ -102,6 +102,14 @@ void ScanForSlave() {
                 slave.channel = CHANNEL;  // 채널 설정
                 slave.encrypt = 0;        // 암호화 비활성화
                 slaveFound = 1;
+                
+                // 초기 접속 메시지를 slave 에 보내줌, slave 는 recv 를 받아야 접속 체크 되므로 
+                
+                const char* msg = "Master and Slave Connected\n";
+
+                for ( int i = 0; i < strlen(msg); i++ ) {
+                    xQueueSend( msgQueue, &msg[i], 0 );
+                }
                 break;
             }
         }
@@ -228,6 +236,7 @@ void setup() {
     DEBUG_PORT.println(__TIME__);
 
     pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, HIGH);
     
     // WiFi 모드 설정
     WiFi.mode(WIFI_STA);
