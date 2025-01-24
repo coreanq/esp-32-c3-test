@@ -19,6 +19,7 @@ typedef struct struct_message {
 struct_message myData;
 
 bool isConnected = false;
+QueueHandle_t msgQueue;
 
 // ESP-NOW 슬레이브 정보를 저장할 전역 변수
 // Send 시 반드시 필요 
@@ -107,44 +108,51 @@ void configDeviceAP() {
 }
 
 
+
 // 데이터 전송 함수
 void sendData() {
-    
-    char buffer[512];
-    int len = DEBUG_PORT.readBytes(buffer, 512);
-
+    int ItemCount = 0;
     do {
-        if( len == -1 || len == 0 ) {
+        ItemCount = uxQueueMessagesWaiting( msgQueue );
+            
+        if( ItemCount == 0 ){
+            DEBUG_PORT.println("Queue Empty");
             break;
         }
-        
-        if( isConnected == false ) {
-            break;
-        }
-        esp_err_t result = esp_now_send(slave.peer_addr, (uint8_t *) buffer, len);
-        buffer[len] = '\0';
 
+        if( ItemCount > 200 ) {
+            // esp now packet size 256
+            ItemCount = 200;
+        }
+
+        for( int i = 0; i < ItemCount; i++ ) {
+            xQueueReceive( msgQueue, &myData.message[i],  0 );
+        }
+
+        esp_err_t result = esp_now_send(slave.peer_addr, (uint8_t *) myData.message, ItemCount);
+        
         if (result == ESP_OK) {
-            DEBUG_PORT.printf("%s", buffer);
+            myData.message[ItemCount] = '\0';
+            DEBUG_PORT.print(myData.message);
         } else {
             DEBUG_PORT.println("Failed");
             DEBUG_PORT.print( "len : " );
-            DEBUG_PORT.println( len );
+            DEBUG_PORT.println( ItemCount );
             DEBUG_PORT.print( esp_err_to_name(result) );
             DEBUG_PORT.println("");
-                
         }
 
     }while(false);
-}
+}        
+        
 
 void setup() {
     // 시리얼 통신 초기화, before bgein
-    DEBUG_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
-    DEBUG_PORT.setTimeout(1);
+    Serial0.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
+    Serial0.setTimeout(1);
 
     Serial.begin(921600);
-    DEBUG_PORT.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
+    Serial0.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
 
     delay(1000);
     pinMode(LED_PIN, OUTPUT);
@@ -169,15 +177,37 @@ void setup() {
 
     esp_now_register_send_cb(OnDataSent);
     esp_now_register_recv_cb(OnDataRecv);
+
+    // Queue 생성
+    msgQueue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
+    
 }
 
 void loop() {
     static bool led_state = false;
+    char buffer[DEBUG_MSG_BUFFER_SIZE];
+    int len = 0;
     
-    if( isConnected == true ) {
-        sendData();
+
+    len = DEBUG_PORT.readBytes(buffer, DEBUG_MSG_BUFFER_SIZE);
+    
+    if( len > 0 ) {
         digitalWrite(LED_PIN, led_state);
         led_state = !led_state;
+
+        for ( int i = 0; i < len; i++ ) {
+            xQueueSend( msgQueue, &myData.message[i], 0 );
+        }
+
+        if( isConnected == true ) {
+            sendData();
+        }
+        else{
+            DEBUG_PORT.println("Not Connected, queue reset");
+            if( xQueueReset( msgQueue ) != pdPASS) {
+              DEBUG_PORT.println("Queue Reset Failed");
+            }
+        }
     }
-    delay(10);
+
 }
