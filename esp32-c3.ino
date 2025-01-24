@@ -32,18 +32,19 @@ void deletePeer();
 
 // 데이터 전송 콜백 함수
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    DEBUG_PORT.print("Send data to : ");   
+    DEBUG_PORT.print(" Send data to : ");   
     DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-    DEBUG_PORT.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
+    DEBUG_PORT.println(status == ESP_NOW_SEND_SUCCESS ? ", Success" : " Fail");
+    isTxDone = true;
 }
 
 // 데이터 수신 콜백 함수
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
     memcpy(&myRecvData, data, data_len);
     myRecvData.message[data_len] = '\0';
-    DEBUG_PORT.print("recv data : ");
     // Serial1.printf("%02X:%02X:%02X:%02X:%02X:%02X", esp_now_info->src_addr[0], esp_now_info->src_addr[1], esp_now_info->src_addr[2], esp_now_info->src_addr[3], esp_now_info->src_addr[4], esp_now_info->src_addr[5]);
-    DEBUG_PORT.println(myRecvData.message);
+    DEBUG_PORT.print(myRecvData.message);
+    BYPASS_SRC_PORT.print(myRecvData.message);
 }
 
 // ESP-NOW 초기화 함수
@@ -186,6 +187,7 @@ void sendData() {
             // Serial1.println("");
 
             if (result == ESP_OK) {
+                isTxDone = false;
             } 
             else {
                 isTxDone = true;
