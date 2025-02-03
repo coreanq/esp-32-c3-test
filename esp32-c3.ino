@@ -14,6 +14,8 @@ esp_now_peer_info_t slave = {0,};
 #define BYPASS_SRC_PORT Serial0
 #define DEBUG_PORT      Serial1
 
+#define ESPNOW_DEBUG
+
 // 데이터 전송을 위한 구조체 정의
 typedef struct struct_message {
     char message[DEBUG_MSG_BUFFER_SIZE];
@@ -42,7 +44,7 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
     memcpy(&myRecvData, data, data_len);
     myRecvData.message[data_len] = '\0';
-    // Serial1.printf("%02X:%02X:%02X:%02X:%02X:%02X", esp_now_info->src_addr[0], esp_now_info->src_addr[1], esp_now_info->src_addr[2], esp_now_info->src_addr[3], esp_now_info->src_addr[4], esp_now_info->src_addr[5]);
+    // DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", esp_now_info->src_addr[0], esp_now_info->src_addr[1], esp_now_info->src_addr[2], esp_now_info->src_addr[3], esp_now_info->src_addr[4], esp_now_info->src_addr[5]);
     DEBUG_PORT.print(myRecvData.message);
     BYPASS_SRC_PORT.print(myRecvData.message);
 }
@@ -63,7 +65,7 @@ void ScanForSlave() {
     bool slaveFound = 0;
     memset(&slave, 0, sizeof(slave));
 
-    Serial1.println("");
+    DEBUG_PORT.println("");
     if (scanResults == 0) {
         DEBUG_PORT.println("No WiFi devices in AP Mode found");
     } else {
@@ -191,8 +193,8 @@ void sendData() {
             esp_err_t result = esp_now_send(peer_addr, (uint8_t *) &myData, ItemCount);
 
             myData.message[ItemCount] = '\0';
-            // Serial1.print(myData.message);
-            // Serial1.println("");
+            // DEBUG_PORT.print(myData.message);
+            // DEBUG_PORT.println("");
 
             if (result == ESP_OK) {
                 isTxDone = false;
@@ -244,6 +246,10 @@ void setup() {
     DEBUG_PORT.print("STA MAC Address: ");
     DEBUG_PORT.println(WiFi.macAddress().c_str());
 
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B);
+
+
     // ESP-NOW 초기화 및 콜백 등록
     InitESPNow();
     
@@ -252,6 +258,19 @@ void setup() {
 
     // Queue 생성
     msgQueue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
+}
+void led_on(int duration) {
+    static unsigned long last_led_on_time = 0;
+    static bool led_state = false;
+
+    if( millis() - last_led_on_time > duration ) {
+        digitalWrite(LED_PIN, led_state);
+        led_state = !led_state;
+        last_led_on_time = millis();
+   }
+    else {
+        digitalWrite(LED_PIN, led_state);
+    }
 }
 
 
@@ -275,16 +294,9 @@ void loop() {
         }
     }
     else {
-        
         recvDataToQueue(); 
         sendData();
 
-        if( led_state ) {
-            digitalWrite(LED_PIN, HIGH);
-        }
-        else {
-            digitalWrite(LED_PIN, LOW);
-        }
-        led_state = !led_state;
+        led_on(500);
     }
 }
