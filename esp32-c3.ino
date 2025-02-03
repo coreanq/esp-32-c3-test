@@ -166,6 +166,8 @@ void setup() {
     // WiFi 모드 설정
     WiFi.mode(WIFI_AP);
     configDeviceAP();
+    
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
     // This is the mac address of the Slave in AP Mode
     DEBUG_PORT.print("AP MAC Address: "); 
@@ -181,31 +183,65 @@ void setup() {
     msgQueue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
     
 }
+// 연결 품질 모니터링
+bool checkSignalQuality() {
+    // 신호가 약할 때 처리
+    if (WiFi.RSSI() < -70) {
+        DEBUG_PORT.print("Signal strength (RSSI): ");
+        DEBUG_PORT.print(WiFi.RSSI());
+        DEBUG_PORT.println(" dBm");
+        return false;
+    }
+    return true;
+}
+
+void led_on(int duration) {
+    static unsigned long last_led_on_time = 0;
+    static bool led_state = false;
+
+    if( millis() - last_led_on_time > duration ) {
+        digitalWrite(LED_PIN, led_state);
+        led_state = !led_state;
+        last_led_on_time = millis();
+   }
+    else {
+        digitalWrite(LED_PIN, led_state);
+    }
+}
 
 void loop() {
     static bool led_state = false;
     char buffer[DEBUG_MSG_BUFFER_SIZE];
     int len = 0;
     
-    len = DEBUG_PORT.readBytes(buffer, DEBUG_MSG_BUFFER_SIZE);
+    bool signal_quality = checkSignalQuality();
     
-    if( len > 0 ) {
-        digitalWrite(LED_PIN, led_state);
-        led_state = !led_state;
+    
+    do {
 
-        for ( int i = 0; i < len; i++ ) {
-            xQueueSend( msgQueue, buffer, 0 );
-        }
+        len = DEBUG_PORT.readBytes(buffer, DEBUG_MSG_BUFFER_SIZE);
+        if( len > 0 ) {
+            led_on(0);
 
-        if( isConnected == true ) {
-            sendData();
-        }
-        else{
-            DEBUG_PORT.println("Not Connected, queue reset");
-            if( xQueueReset( msgQueue ) != pdPASS) {
-              DEBUG_PORT.println("Queue Reset Failed");
+            for ( int i = 0; i < len; i++ ) {
+                xQueueSend( msgQueue, buffer, 0 );
+            }
+
+            if( isConnected == true ) {
+                sendData();
+            }
+            else{
+                DEBUG_PORT.println("Not Connected, queue reset");
+                if( xQueueReset( msgQueue ) != pdPASS) {
+                  DEBUG_PORT.println("Queue Reset Failed");
+                }
             }
         }
-    }
 
+        if( signal_quality == false ) {
+            break;
+        }
+
+        led_on(500);
+    }while(false);
 }
