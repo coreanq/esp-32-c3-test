@@ -14,6 +14,8 @@ esp_now_peer_info_t slave = {0,};
 #define BYPASS_SRC_PORT Serial0
 #define DEBUG_PORT      Serial1
 
+#define RS485_TX_ENABLE_PIN 5
+
 #define ESPNOW_DEBUG
 
 // 데이터 전송을 위한 구조체 정의
@@ -22,9 +24,12 @@ typedef struct struct_message {
 } struct_message;
 
 struct_message myData;
-struct_message myRecvData;
 
-QueueHandle_t msgQueue;
+struct_message bypassSerialData; // serial Task 에서만 사용
+
+QueueHandle_t msgRecv485Queue;
+QueueHandle_t msgSend485Queue;
+
 bool isTxDone = true;
 
 // 함수 선언
@@ -34,19 +39,21 @@ void deletePeer();
 
 // 데이터 전송 콜백 함수
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    DEBUG_PORT.print(" Send data to : ");   
-    DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+    DEBUG_PORT.print(" Send data through ESPNOW: ");   
+    // DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
     DEBUG_PORT.println(status == ESP_NOW_SEND_SUCCESS ? ", Success" : " Fail");
     isTxDone = true;
 }
 
 // 데이터 수신 콜백 함수
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
-    memcpy(&myRecvData, data, data_len);
-    myRecvData.message[data_len] = '\0';
-    // DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", esp_now_info->src_addr[0], esp_now_info->src_addr[1], esp_now_info->src_addr[2], esp_now_info->src_addr[3], esp_now_info->src_addr[4], esp_now_info->src_addr[5]);
-    DEBUG_PORT.print(myRecvData.message);
-    BYPASS_SRC_PORT.print(myRecvData.message);
+    memcpy(&myData, data, data_len);
+    DEBUG_PORT.print(myData.message);
+    
+    for ( int i = 0; i < data_len; i++ ) {
+        DEBUG_PORT.print("send data to 485");
+        xQueueSend( msgSend485Queue, data, 0 );
+    }
 }
 
 // ESP-NOW 초기화 함수
@@ -110,7 +117,7 @@ void ScanForSlave() {
                 const char* msg = "Master and Slave Connected\n";
 
                 for ( int i = 0; i < strlen(msg); i++ ) {
-                    xQueueSend( msgQueue, &msg[i], 0 );
+                    xQueueSend( msgRecv485Queue, &msg[i], 0 );
                 }
                 break;
             }
@@ -167,14 +174,14 @@ void deletePeer() {
 }
 
 // 데이터 전송 함수
-void sendData() {
+void sendDataToWifi() {
     const uint8_t *peer_addr = slave.peer_addr;
     int ItemCount = 0;
     do {
         if( isTxDone == false) {
             break;
         }
-        ItemCount = uxQueueMessagesWaiting( msgQueue );
+        ItemCount = uxQueueMessagesWaiting( msgRecv485Queue );
         
         if( ItemCount == 0 ){
             break;
@@ -186,7 +193,7 @@ void sendData() {
         }
         
         for( int i = 0; i < ItemCount; i++ ) {
-            xQueueReceive( msgQueue, &myData.message[i],  0 );
+            xQueueReceive( msgRecv485Queue, &myData.message[i],  0 );
         }
 
         if( ItemCount > 0) {
@@ -210,13 +217,63 @@ void sendData() {
     }while(false);
 }
 
-void recvDataToQueue() {
-    int len = BYPASS_SRC_PORT.readBytes(myData.message, DEBUG_MSG_BUFFER_SIZE);
-    myData.message[len] = '\0';
-    
-    for ( int i = 0; i < len; i++ ) {
-        xQueueSend( msgQueue, &myData.message[i], 0 );
+
+void bypssSerialTask(void* parameter) 
+{
+    int sendLen = 0;
+    int recvLen = 0;
+
+    while( true )
+    {
+        recvLen = BYPASS_SRC_PORT.readBytes(bypassSerialData.message, DEBUG_MSG_BUFFER_SIZE);
+        bypassSerialData.message[recvLen] = '\0';
+        
+        if( recvLen > 0 ) {
+            for ( int i = 0; i < recvLen; i++ ) {
+                xQueueSend( msgRecv485Queue, &bypassSerialData.message[i], 0 );
+            }
+            DEBUG_PORT.print("recv data from 485: ");
+            
+            for(int i = 0; i < recvLen; i++) {
+                DEBUG_PORT.print(bypassSerialData.message[i], HEX);
+                DEBUG_PORT.print(" ");
+            }
+            DEBUG_PORT.println("");
+        }
+        else {
+            // DEBUG_PORT.println("No data to send");
+        }
+
+        do{
+            sendLen = uxQueueMessagesWaiting( msgSend485Queue );
+            if( sendLen == 0 ) {
+                vTaskDelay( portTICK_PERIOD_MS);
+                break;
+            }
+
+            if( sendLen > 200 ) {
+                sendLen = 200;
+            }
+            DEBUG_PORT.print("send data to 485:  ");
+            DEBUG_PORT.println(sendLen);
+            
+            for( int i = 0; i < sendLen; i++ ) {
+                xQueueReceive( msgSend485Queue, &bypassSerialData.message[i], 0 );
+            }
+            
+            digitalWrite(RS485_TX_ENABLE_PIN, HIGH);
+            vTaskDelay( portTICK_PERIOD_MS);
+
+            BYPASS_SRC_PORT.write(bypassSerialData.message, sendLen);
+
+            digitalWrite(RS485_TX_ENABLE_PIN, LOW);
+            vTaskDelay( portTICK_PERIOD_MS);
+
+        }while(false);
+
     }
+
+
 }
 
 void setup() {
@@ -226,9 +283,13 @@ void setup() {
     DEBUG_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
     DEBUG_PORT.setTimeout(1);
 
-    Serial.begin(921600);
-    BYPASS_SRC_PORT.begin(3000000, SERIAL_8N1, 21, 20);  // RX:20, TX:21 핀 사용
+    Serial.begin(3000000);                              // USB to serial 
+    BYPASS_SRC_PORT.begin(460800, SERIAL_8N1, 20, 21);  // RX:20, TX:21 핀 사용
     DEBUG_PORT.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
+    
+    pinMode(RS485_TX_ENABLE_PIN, OUTPUT);
+    digitalWrite(RS485_TX_ENABLE_PIN, LOW); // DE  HIGH 송신 (TX) 활성화 
+    
     delay(1000);
 
     DEBUG_PORT.print("\n\n-------------------------------------------------------------------\n");
@@ -257,7 +318,12 @@ void setup() {
     esp_now_register_recv_cb(OnDataRecv);
 
     // Queue 생성
-    msgQueue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
+    msgRecv485Queue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
+    msgSend485Queue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
+    
+
+    xTaskCreate(bypssSerialTask, "bypssSerialTask", 1024, NULL, 1, NULL);
+
 }
 void led_on(int duration) {
     static unsigned long last_led_on_time = 0;
@@ -294,9 +360,7 @@ void loop() {
         }
     }
     else {
-        recvDataToQueue(); 
-        sendData();
-
+        sendDataToWifi();
         led_on(500);
     }
 }
