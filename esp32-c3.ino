@@ -3,23 +3,31 @@
 #include <esp_wifi.h>
 
 #define LED_PIN 8
-
-
 #define CHANNEL 1
-#define PRINTSCANRESULTS 3
+#define PRINTSCANRESULTS 1
 #define DELETEBEFOREPAIR 0
 #define DEBUG_MSG_BUFFER_SIZE 4096
 
-#define DEBUG_PORT Serial
+#define BYPASS_SRC_PORT     Serial0
+#define DEBUG_PORT          Serial1
+
+#define RS485_TX_ENABLE_PIN 5
+
+#define ESPNOW_DEBUG
 
 // 데이터 전송을 위한 구조체 정의
 typedef struct struct_message {
     char message[DEBUG_MSG_BUFFER_SIZE];
 } struct_message;
+
+
 struct_message myData;
+struct_message bypassSerialData; // serial Task 에서만 사용
 
 bool isConnected = false;
-QueueHandle_t msgQueue;
+
+QueueHandle_t msgRecv485Queue;
+QueueHandle_t msgSend485Queue;
 
 // ESP-NOW 슬레이브 정보를 저장할 전역 변수
 // Send 시 반드시 필요 
@@ -78,6 +86,10 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, in
         memcpy(&myData, data, data_len);
         myData.message[data_len] = '\0';
         DEBUG_PORT.print(myData.message);
+
+        for(int i = 0; i < data_len; i++) {
+            xQueueSend( msgSend485Queue, &myData.message[i], 0 );
+        }
     }
 
     isConnected = true;
@@ -110,10 +122,10 @@ void configDeviceAP() {
 
 
 // 데이터 전송 함수
-void sendData() {
+void sendDataToWifi() {
     int ItemCount = 0;
     do {
-        ItemCount = uxQueueMessagesWaiting( msgQueue );
+        ItemCount = uxQueueMessagesWaiting( msgRecv485Queue );
             
         if( ItemCount == 0 ){
             break;
@@ -125,14 +137,21 @@ void sendData() {
         }
 
         for( int i = 0; i < ItemCount; i++ ) {
-            xQueueReceive( msgQueue, &myData.message[i],  0 );
+            xQueueReceive( msgRecv485Queue, &myData.message[i],  0 );
         }
 
         esp_err_t result = esp_now_send(slave.peer_addr, (uint8_t *) myData.message, ItemCount);
         
         if (result == ESP_OK) {
             myData.message[ItemCount] = '\0';
-            // DEBUG_PORT.print(myData.message);
+            DEBUG_PORT.print("send data to wifi: ");
+
+            for( int i = 0; i < ItemCount; i++ ) {
+                DEBUG_PORT.print(myData.message[i], HEX);
+                DEBUG_PORT.print(" ");
+            }
+            DEBUG_PORT.println("");
+
         } else {
             DEBUG_PORT.println("Failed");
             DEBUG_PORT.print( "len : " );
@@ -145,20 +164,90 @@ void sendData() {
 }        
         
 
+
+void bypssSerialTask(void* parameter) 
+{
+    int sendLen = 0;
+    int recvLen = 0;
+
+    while( true )
+    {
+        recvLen = BYPASS_SRC_PORT.readBytes(bypassSerialData.message, DEBUG_MSG_BUFFER_SIZE);
+        bypassSerialData.message[recvLen] = '\0';
+        
+        if( recvLen > 0 ) {
+            for ( int i = 0; i < recvLen; i++ ) {
+                xQueueSend( msgRecv485Queue, &bypassSerialData.message[i], 0 );
+            }
+            DEBUG_PORT.print("recv data from 485: ");
+            
+            for(int i = 0; i < recvLen; i++) {
+                DEBUG_PORT.print(bypassSerialData.message[i], HEX);
+                DEBUG_PORT.print(" ");
+            }
+            DEBUG_PORT.println("");
+        }
+        else {
+            // DEBUG_PORT.println("No data to send");
+        }
+
+        do{
+            sendLen = uxQueueMessagesWaiting( msgSend485Queue );
+            if( sendLen == 0 ) {
+                vTaskDelay( portTICK_PERIOD_MS);
+                break;
+            }
+
+            if( sendLen > 200 ) {
+                sendLen = 200;
+            }
+            DEBUG_PORT.print("send data to 485:  ");
+            DEBUG_PORT.println(sendLen);
+            
+            for( int i = 0; i < sendLen; i++ ) {
+                xQueueReceive( msgSend485Queue, &bypassSerialData.message[i], 0 );
+            }
+            
+            digitalWrite(RS485_TX_ENABLE_PIN, HIGH);
+            vTaskDelay( portTICK_PERIOD_MS);
+
+            BYPASS_SRC_PORT.write(bypassSerialData.message, sendLen);
+
+            digitalWrite(RS485_TX_ENABLE_PIN, LOW);
+            vTaskDelay( portTICK_PERIOD_MS);
+
+        }while(false);
+
+    }
+
+
+}
+
 void setup() {
-    // 시리얼 통신 초기화, before bgein
+    // 시리얼 통신 초기화, before begin
+    
+    BYPASS_SRC_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
+    BYPASS_SRC_PORT.setTimeout(1);
+
     DEBUG_PORT.setRxBufferSize(DEBUG_MSG_BUFFER_SIZE);
     DEBUG_PORT.setTimeout(1);
 
-    Serial.begin(3000000);
-    Serial0.begin(3000000, SERIAL_8N1, 1, 0);  //  DEBUG RX:1, TX:0 핀 사용
+
+    Serial.begin(3000000);  // USB to Serial
+
+    BYPASS_SRC_PORT.begin(460800, SERIAL_8N1, 20, 21); // rx 20, tx 21
+    DEBUG_PORT.begin(3000000, SERIAL_8N1, 1, 0); // rx 0, tx 1
+    
+    pinMode(RS485_TX_ENABLE_PIN, OUTPUT);
+    digitalWrite(RS485_TX_ENABLE_PIN, LOW); // DE HIGH 송신 (tx) 활성화 
 
     delay(1000);
+
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
 
     DEBUG_PORT.print("\n\n-------------------------------------------------------------------\n");
-    DEBUG_PORT.print("Date : ");
+    DEBUG_PORT.print("Current Date : ");
     DEBUG_PORT.println(__DATE__);
     DEBUG_PORT.print("Time : ");
     DEBUG_PORT.println(__TIME__);
@@ -180,8 +269,11 @@ void setup() {
     esp_now_register_recv_cb(OnDataRecv);
 
     // Queue 생성
-    msgQueue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
-    
+    msgRecv485Queue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
+    msgSend485Queue = xQueueCreate( DEBUG_MSG_BUFFER_SIZE, sizeof(char) );
+
+    xTaskCreate(bypssSerialTask, "bypssSerialTask", 1024, NULL, 1, NULL);
+
 }
 // 연결 품질 모니터링
 bool checkSignalQuality() {
@@ -211,32 +303,12 @@ void led_on(int duration) {
 
 void loop() {
     static bool led_state = false;
-    char buffer[DEBUG_MSG_BUFFER_SIZE];
     int len = 0;
     
     bool signal_quality = checkSignalQuality();
     
-    
     do {
-
-        len = DEBUG_PORT.readBytes(buffer, DEBUG_MSG_BUFFER_SIZE);
-        if( len > 0 ) {
-            led_on(0);
-
-            for ( int i = 0; i < len; i++ ) {
-                xQueueSend( msgQueue, buffer, 0 );
-            }
-
-            if( isConnected == true ) {
-                sendData();
-            }
-            else{
-                DEBUG_PORT.println("Not Connected, queue reset");
-                if( xQueueReset( msgQueue ) != pdPASS) {
-                  DEBUG_PORT.println("Queue Reset Failed");
-                }
-            }
-        }
+        sendDataToWifi();
 
         if( signal_quality == false ) {
             break;
