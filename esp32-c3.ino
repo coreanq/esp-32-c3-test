@@ -39,21 +39,22 @@ void deletePeer();
 
 // 데이터 전송 콜백 함수
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-    DEBUG_PORT.print(" Send data through ESPNOW: ");   
+    // DEBUG_PORT.print(" Send data through ESPNOW: ");   
     // DEBUG_PORT.printf("%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-    DEBUG_PORT.println(status == ESP_NOW_SEND_SUCCESS ? ", Success" : " Fail");
+    // DEBUG_PORT.println(status == ESP_NOW_SEND_SUCCESS ? ", Success" : " Fail");
     isTxDone = true;
 }
 
 // 데이터 수신 콜백 함수
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
-    memcpy(&myData, data, data_len);
-    DEBUG_PORT.print(myData.message);
+    // DEBUG_PORT.print("recved-wifi-data: ");
     
-    for ( int i = 0; i < data_len; i++ ) {
-        DEBUG_PORT.print("send data to 485");
-        xQueueSend( msgSend485Queue, data, 0 );
+    for( int i = 0; i < data_len; i++ ) {
+        xQueueSend( msgSend485Queue, &data[i], 0 );
+        // DEBUG_PORT.print(data[i], HEX);
+        // DEBUG_PORT.print(" ");
     }
+    // DEBUG_PORT.println("");
 }
 
 // ESP-NOW 초기화 함수
@@ -254,8 +255,7 @@ void bypssSerialTask(void* parameter)
             if( sendLen > 200 ) {
                 sendLen = 200;
             }
-            DEBUG_PORT.print("send data to 485:  ");
-            DEBUG_PORT.println(sendLen);
+
             
             for( int i = 0; i < sendLen; i++ ) {
                 xQueueReceive( msgSend485Queue, &bypassSerialData.message[i], 0 );
@@ -265,9 +265,19 @@ void bypssSerialTask(void* parameter)
             vTaskDelay( portTICK_PERIOD_MS);
 
             BYPASS_SRC_PORT.write(bypassSerialData.message, sendLen);
+            BYPASS_SRC_PORT.flush(true);
 
             digitalWrite(RS485_TX_ENABLE_PIN, LOW);
             vTaskDelay( portTICK_PERIOD_MS);
+
+            DEBUG_PORT.print("send data to 485:  ");
+            
+            for( int i = 0; i < sendLen; i++ ) {
+                DEBUG_PORT.print(bypassSerialData.message[i], HEX);
+                DEBUG_PORT.print(" ");
+            }
+            DEBUG_PORT.println("");
+
 
         }while(false);
 
