@@ -4,7 +4,7 @@
 
 #define LED_PIN 8
 #define CHANNEL 1
-#define PRINTSCANRESULTS 1
+#define PRINTSCANRESULTS 3
 #define DELETEBEFOREPAIR 0
 #define DEBUG_MSG_BUFFER_SIZE 4096
 
@@ -85,12 +85,15 @@ void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, in
     else {
         memcpy(&myData, data, data_len);
         myData.message[data_len] = '\0';
-        DEBUG_PORT.print(myData.message);
 
         for(int i = 0; i < data_len; i++) {
+            // DEBUG_PORT.print(myData.message[i], HEX);
+            // DEBUG_PORT.print(" ");
             xQueueSend( msgSend485Queue, &myData.message[i], 0 );
         }
+        // DEBUG_PORT.println("");
     }
+
 
     isConnected = true;
     
@@ -144,7 +147,7 @@ void sendDataToWifi() {
         
         if (result == ESP_OK) {
             myData.message[ItemCount] = '\0';
-            DEBUG_PORT.print("send data to wifi: ");
+            DEBUG_PORT.print("send recved-485-data to wifi: ");
 
             for( int i = 0; i < ItemCount; i++ ) {
                 DEBUG_PORT.print(myData.message[i], HEX);
@@ -201,8 +204,6 @@ void bypssSerialTask(void* parameter)
             if( sendLen > 200 ) {
                 sendLen = 200;
             }
-            DEBUG_PORT.print("send data to 485:  ");
-            DEBUG_PORT.println(sendLen);
             
             for( int i = 0; i < sendLen; i++ ) {
                 xQueueReceive( msgSend485Queue, &bypassSerialData.message[i], 0 );
@@ -212,9 +213,19 @@ void bypssSerialTask(void* parameter)
             vTaskDelay( portTICK_PERIOD_MS);
 
             BYPASS_SRC_PORT.write(bypassSerialData.message, sendLen);
+            BYPASS_SRC_PORT.flush(true);
 
             digitalWrite(RS485_TX_ENABLE_PIN, LOW);
             vTaskDelay( portTICK_PERIOD_MS);
+
+            DEBUG_PORT.print("send recved-wifi-data to 485: ");
+            
+            for( int i = 0; i < sendLen; i++ ) {
+                DEBUG_PORT.print(bypassSerialData.message[i], HEX);
+                DEBUG_PORT.print(" ");
+            }
+            DEBUG_PORT.println("");
+
 
         }while(false);
 
