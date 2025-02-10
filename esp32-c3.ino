@@ -47,14 +47,14 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 
 // 데이터 수신 콜백 함수
 void OnDataRecv(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
-    // DEBUG_PORT.print("recved-wifi-data: ");
+    DEBUG_PORT.print("recved-wifi-data: ");
     
     for( int i = 0; i < data_len; i++ ) {
         xQueueSend( msgSend485Queue, &data[i], 0 );
-        // DEBUG_PORT.print(data[i], HEX);
-        // DEBUG_PORT.print(" ");
+        DEBUG_PORT.print(data[i], HEX);
+        DEBUG_PORT.print(" ");
     }
-    // DEBUG_PORT.println("");
+    DEBUG_PORT.println("");
 }
 
 // ESP-NOW 초기화 함수
@@ -199,10 +199,15 @@ void sendDataToWifi() {
 
         if( ItemCount > 0) {
             esp_err_t result = esp_now_send(peer_addr, (uint8_t *) &myData, ItemCount);
+            
+        
+            DEBUG_PORT.print("send 485-data to wifi: ");
 
-            myData.message[ItemCount] = '\0';
-            // DEBUG_PORT.print(myData.message);
-            // DEBUG_PORT.println("");
+            for( int i = 0; i < ItemCount; i++ ) {
+                DEBUG_PORT.print(myData.message[i], HEX);
+                DEBUG_PORT.print(" ");
+            }
+            DEBUG_PORT.println("");
 
             if (result == ESP_OK) {
                 isTxDone = false;
